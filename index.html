@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Open Day CV Analyzer | Postobón</title>
+    <meta name="description" content="Evaluación inteligente de hojas de vida para el Open Day de Postobón.">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Source+Sans+3:wght@400;600;700&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+
+    <!-- Librerías necesarias para extraer texto en navegador -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js" defer></script>
+    <script src="app.js" defer></script>
+</head>
+
+<body>
+    <div class="page-glow page-glow-1" aria-hidden="true"></div>
+    <div class="page-glow page-glow-2" aria-hidden="true"></div>
+
+    <main class="app-shell">
+        <header class="hero reveal" style="--delay: 0.05s;">
+            <div class="hero-brand">
+                <img class="hero-logo" src="logo-postobon-azul.png" alt="Logo de Postobón">
+            </div>
+            <p class="eyebrow">Open Day Postobón</p>
+            <h1>Evaluador de Hojas de Vida con IA</h1>
+            <p class="hero-copy">
+                Carga múltiples hojas de vida en formato Harvard, extrae el texto desde tu navegador y
+                obtén un análisis automático con métricas consolidadas para tomar decisiones rápidas.
+            </p>
+        </header>
+
+        <section class="panel upload-panel reveal" style="--delay: 0.2s;" aria-labelledby="upload-title">
+            <div class="panel-head">
+                <h2 id="upload-title">Carga de Hojas de Vida</h2>
+                <p>Admite PDF, DOCX y TXT. Arrastra y suelta o selecciona archivos.</p>
+            </div>
+
+            <div id="dropZone" class="drop-zone" role="button" tabindex="0" aria-label="Zona de carga de archivos">
+                <input id="fileInput" type="file" accept=".pdf,.docx,.txt" multiple>
+                <div class="drop-icon" aria-hidden="true">⇪</div>
+                <p class="drop-title">Suelta aquí las hojas de vida</p>
+                <p class="drop-subtitle">o haz clic para seleccionarlas</p>
+            </div>
+
+            <div class="upload-actions">
+                <button id="analyzeBtn" class="btn primary" type="button">Analizar hojas de vida</button>
+                <button id="clearQueueBtn" class="btn ghost" type="button">Limpiar lista</button>
+            </div>
+
+            <div class="progress-wrap" aria-live="polite">
+                <div class="progress-track">
+                    <div id="progressBar" class="progress-bar" style="width: 0%;"></div>
+                </div>
+                <p id="progressText" class="progress-text">Sin procesamiento en curso.</p>
+            </div>
+
+            <div>
+                <h3>Archivos cargados</h3>
+                <ul id="fileList" class="file-list" aria-live="polite"></ul>
+            </div>
+        </section>
+
+        <section class="panel summary-panel reveal" style="--delay: 0.28s;" aria-labelledby="summary-title">
+            <div class="panel-head">
+                <h2 id="summary-title">Resumen Consolidado</h2>
+                <p>Métricas globales de la sesión actual.</p>
+            </div>
+
+            <div id="metricsGrid" class="metrics-grid">
+                <article class="metric-card">
+                    <h3>Total evaluadas</h3>
+                    <p id="metricTotal">0</p>
+                </article>
+                <article class="metric-card">
+                    <h3>Promedio score</h3>
+                    <p id="metricAverage">0.0</p>
+                </article>
+                <article class="metric-card">
+                    <h3>Apto</h3>
+                    <p id="metricApto">0</p>
+                </article>
+                <article class="metric-card">
+                    <h3>Revisar</h3>
+                    <p id="metricRevisar">0</p>
+                </article>
+                <article class="metric-card">
+                    <h3>No recomendado</h3>
+                    <p id="metricNoRecomendado">0</p>
+                </article>
+            </div>
+
+            <div class="summary-columns">
+                <article class="summary-card">
+                    <h3>Observaciones más frecuentes</h3>
+                    <ul id="frequentObservations" class="tag-list"></ul>
+                </article>
+
+                <article class="summary-card">
+                    <h3>Resumen ejecutivo</h3>
+                    <p id="executiveSummary" class="executive-text">
+                        Aún no hay evaluaciones. Carga hojas de vida para generar insights.
+                    </p>
+                </article>
+            </div>
+
+            <div class="report-actions">
+                <button id="downloadJsonBtn" class="btn primary" type="button">Descargar reporte JSON</button>
+                <button id="downloadCsvBtn" class="btn ghost" type="button">Descargar reporte CSV</button>
+                <button id="clearHistoryBtn" class="btn ghost" type="button">Borrar historial de sesión</button>
+            </div>
+        </section>
+
+        <section class="panel results-panel reveal" style="--delay: 0.36s;" aria-labelledby="results-title">
+            <div class="panel-head">
+                <h2 id="results-title">Resultados por Hoja de Vida</h2>
+                <p>Análisis individual generado por IA.</p>
+            </div>
+            <div id="resultsGrid" class="results-grid"></div>
+        </section>
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+
+</html>
