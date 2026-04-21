@@ -3,7 +3,7 @@
 // ===============================
 // Configuración editable
 // ===============================
-const API_URL = "https://TU-FUNCTION-APP.azurewebsites.net/api/analyze-cv";
+const API_URL = "https://sdipfunchuiadllo.azurewebsites.net/api/v1.0.0/cv/analyze";
 const API_KEY = ""; // Pega aquí tu key real si la Function lo requiere
 const API_KEY_MODE = "none"; // none | header | query
 const API_KEY_HEADER_NAME = "x-functions-key";
@@ -73,11 +73,25 @@ function configurePdfWorker() {
 }
 
 function loadDefaultConfig() {
-    elements.apiUrlInput.value = API_URL;
-    elements.apiKeyInput.value = API_KEY;
-    elements.apiKeyModeInput.value = API_KEY_MODE;
-    elements.apiKeyHeaderInput.value = API_KEY_HEADER_NAME;
-    elements.apiKeyQueryInput.value = API_KEY_QUERY_PARAM;
+    if (elements.apiUrlInput) {
+        elements.apiUrlInput.value = API_URL;
+    }
+
+    if (elements.apiKeyInput) {
+        elements.apiKeyInput.value = API_KEY;
+    }
+
+    if (elements.apiKeyModeInput) {
+        elements.apiKeyModeInput.value = API_KEY_MODE;
+    }
+
+    if (elements.apiKeyHeaderInput) {
+        elements.apiKeyHeaderInput.value = API_KEY_HEADER_NAME;
+    }
+
+    if (elements.apiKeyQueryInput) {
+        elements.apiKeyQueryInput.value = API_KEY_QUERY_PARAM;
+    }
 }
 
 function bindEvents() {
@@ -87,7 +101,18 @@ function bindEvents() {
         elements.fileInput.value = "";
     });
 
-    elements.dropZone.addEventListener("click", () => elements.fileInput.click());
+    // Prevent bubbling from the hidden input so the picker opens only once.
+    elements.fileInput.addEventListener("click", (event) => {
+        event.stopPropagation();
+    });
+
+    elements.dropZone.addEventListener("click", (event) => {
+        if (event.target === elements.fileInput) {
+            return;
+        }
+
+        elements.fileInput.click();
+    });
     elements.dropZone.addEventListener("keydown", (event) => {
         if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
@@ -116,9 +141,18 @@ function bindEvents() {
 
     elements.analyzeBtn.addEventListener("click", analyzeQueue);
     elements.clearQueueBtn.addEventListener("click", clearQueue);
-    elements.downloadJsonBtn.addEventListener("click", downloadJsonReport);
-    elements.downloadCsvBtn.addEventListener("click", downloadCsvReport);
-    elements.clearHistoryBtn.addEventListener("click", clearSessionHistory);
+
+    if (elements.downloadJsonBtn) {
+        elements.downloadJsonBtn.addEventListener("click", downloadJsonReport);
+    }
+
+    if (elements.downloadCsvBtn) {
+        elements.downloadCsvBtn.addEventListener("click", downloadCsvReport);
+    }
+
+    if (elements.clearHistoryBtn) {
+        elements.clearHistoryBtn.addEventListener("click", clearSessionHistory);
+    }
 }
 
 function addFilesToQueue(files) {
@@ -216,7 +250,9 @@ async function analyzeQueue() {
     const apiConfig = getApiConfigFromInputs();
     if (!apiConfig.apiUrl) {
         showToast("Configura la URL de la Azure Function para continuar.");
-        elements.apiUrlInput.focus();
+        if (elements.apiUrlInput) {
+            elements.apiUrlInput.focus();
+        }
         return;
     }
 
@@ -247,7 +283,8 @@ async function analyzeQueue() {
             const analysis = await callAzureFunction({
                 apiConfig,
                 fileName: item.file.name,
-                text: extraction.text
+                text: extraction.text,
+                pageCount: extraction.pageCount
             });
 
             item.status = "done";
@@ -296,7 +333,10 @@ async function extractTextFromFile(file) {
 
     if (extension === "txt") {
         const text = await file.text();
-        return { text };
+        return {
+            text,
+            pageCount: inferPageCountFromText(text)
+        };
     }
 
     throw new Error("Formato no soportado para extracción.");
@@ -326,7 +366,8 @@ async function extractTextFromPdf(file) {
     }
 
     return {
-        text: chunks.join("\n\n")
+        text: chunks.join("\n\n"),
+        pageCount: pdfDocument.numPages
     };
 }
 
@@ -337,12 +378,14 @@ async function extractTextFromDocx(file) {
 
     const arrayBuffer = await file.arrayBuffer();
     const result = await window.mammoth.extractRawText({ arrayBuffer });
+    const text = (result.value || "").replace(/\n{3,}/g, "\n\n");
     return {
-        text: (result.value || "").replace(/\n{3,}/g, "\n\n")
+        text,
+        pageCount: inferPageCountFromText(text)
     };
 }
 
-async function callAzureFunction({ apiConfig, fileName, text }) {
+async function callAzureFunction({ apiConfig, fileName, text, pageCount }) {
     let requestUrl = apiConfig.apiUrl;
     const headers = {
         "Content-Type": "application/json"
@@ -361,6 +404,7 @@ async function callAzureFunction({ apiConfig, fileName, text }) {
     const payload = {
         fileName,
         text,
+        pageCount: normalizePageCount(pageCount),
         source: SOURCE_LABEL
     };
 
@@ -390,25 +434,62 @@ async function callAzureFunction({ apiConfig, fileName, text }) {
     return normalizeApiResponse(data);
 }
 
+function normalizePageCount(pageCount) {
+    const value = Number(pageCount);
+    if (Number.isInteger(value) && value > 0) {
+        return value;
+    }
+
+    return 1;
+}
+
+function inferPageCountFromText(text) {
+    const safeText = normalizeText(text, "");
+    if (!safeText) {
+        return 0;
+    }
+
+    // DOCX/TXT no siempre exponen paginación real en navegador; si hay saltos de página explícitos los respetamos.
+    const explicitBreaks = safeText.match(/\f/g);
+    if (explicitBreaks?.length) {
+        return explicitBreaks.length + 1;
+    }
+
+    return 1;
+}
+
 function normalizeApiResponse(data) {
-    const score = Number(data?.score);
+    const score = Number(data?.score ?? data?.puntuacionGeneral);
     const normalizedScore = Number.isFinite(score) ? Math.max(0, Math.min(100, score)) : 0;
 
-    const verdict = normalizeVerdict(data?.verdict);
+    const verdict = normalizeVerdict(data?.verdict ?? data?.veredicto);
 
     return {
         score: normalizedScore,
         verdict,
-        summary: normalizeText(data?.summary, "Sin resumen disponible."),
-        strengths: normalizeArray(data?.strengths),
-        improvements: normalizeArray(data?.improvements),
-        missing_fields: normalizeArray(data?.missing_fields),
-        recommendations: normalizeArray(data?.recommendations)
+        summary: normalizeText(data?.summary ?? data?.resumenEvaluacion, "Sin resumen disponible."),
+        strengths: normalizeArray(data?.strengths ?? data?.fortalezas),
+        improvements: normalizeArray(data?.improvements ?? data?.oportunidadesMejora),
+        missing_fields: normalizeArray(data?.missing_fields ?? data?.camposFaltantesODebiles),
+        recommendations: normalizeArray(data?.recommendations ?? data?.consejosPracticos),
+        erroresOrtograficos: normalizeOrthographicErrors(data?.erroresOrtograficos)
     };
 }
 
 function normalizeVerdict(rawVerdict) {
     const value = normalizeText(rawVerdict, "Revisar").toLowerCase();
+
+    if (value.includes("alta recomend") || value.includes("altamente recomendado")) {
+        return "Apto";
+    }
+
+    if (value.includes("media recomend")) {
+        return "Revisar";
+    }
+
+    if (value.includes("baja recomend")) {
+        return "No recomendado";
+    }
 
     if (value.includes("apto")) {
         return "Apto";
@@ -428,6 +509,34 @@ function normalizeArray(value) {
 
     return value
         .map((entry) => normalizeText(entry, ""))
+        .filter(Boolean);
+}
+
+function normalizeOrthographicErrors(value) {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    return value
+        .map((item) => {
+            if (!item || typeof item !== "object") {
+                return null;
+            }
+
+            const textoOriginal = normalizeText(item.textoOriginal, "");
+            const sugerencia = normalizeText(item.sugerencia, "");
+            const contexto = normalizeText(item.contexto, "");
+
+            if (!textoOriginal && !sugerencia && !contexto) {
+                return null;
+            }
+
+            return {
+                textoOriginal,
+                sugerencia,
+                contexto
+            };
+        })
         .filter(Boolean);
 }
 
@@ -536,6 +645,7 @@ function buildResultCard(entry) {
     card.appendChild(verdict);
     card.appendChild(summary);
     card.appendChild(buildListBlock("Fortalezas", entry.analysis.strengths));
+    card.appendChild(buildOrthographicErrorsBlock(entry.analysis.erroresOrtograficos));
     card.appendChild(buildListBlock("Mejoras", entry.analysis.improvements));
     card.appendChild(buildListBlock("Campos faltantes", entry.analysis.missing_fields));
     card.appendChild(buildListBlock("Recomendaciones", entry.analysis.recommendations));
@@ -563,6 +673,53 @@ function buildListBlock(title, values) {
     values.forEach((item) => {
         const li = document.createElement("li");
         li.textContent = item;
+        ul.appendChild(li);
+    });
+
+    block.appendChild(ul);
+    return block;
+}
+
+function buildOrthographicErrorsBlock(errors) {
+    const normalizedErrors = normalizeOrthographicErrors(errors);
+
+    const block = document.createElement("section");
+    block.className = "result-block";
+
+    const heading = document.createElement("h4");
+    heading.textContent = `Errores ortográficos (${normalizedErrors.length})`;
+    block.appendChild(heading);
+
+    if (!normalizedErrors.length) {
+        const empty = document.createElement("p");
+        empty.className = "muted-empty";
+        empty.textContent = "No se detectaron errores ortográficos";
+        block.appendChild(empty);
+        return block;
+    }
+
+    const ul = document.createElement("ul");
+    ul.className = "orthography-list";
+
+    normalizedErrors.forEach((item) => {
+        const li = document.createElement("li");
+        li.className = "orthography-item";
+
+        const original = document.createElement("p");
+        original.className = "orthography-line";
+        original.textContent = `Texto original: ${item.textoOriginal || "Sin dato"}`;
+
+        const suggestion = document.createElement("p");
+        suggestion.className = "orthography-line";
+        suggestion.textContent = `Sugerencia: ${item.sugerencia || "Sin sugerencia"}`;
+
+        const context = document.createElement("p");
+        context.className = "orthography-line";
+        context.textContent = `Contexto: ${item.contexto || "Sin contexto"}`;
+
+        li.appendChild(original);
+        li.appendChild(suggestion);
+        li.appendChild(context);
         ul.appendChild(li);
     });
 
@@ -769,14 +926,24 @@ function persistSessionHistory() {
 
 function updateAnalyzeButtonState() {
     const hasPending = state.queue.some((item) => item.status === "pending" || item.status === "error");
-    elements.analyzeBtn.disabled = state.processing || !hasPending;
-    elements.clearQueueBtn.disabled = state.processing || !state.queue.length;
+    if (elements.analyzeBtn) {
+        elements.analyzeBtn.disabled = state.processing || !hasPending;
+    }
+
+    if (elements.clearQueueBtn) {
+        elements.clearQueueBtn.disabled = state.processing || !state.queue.length;
+    }
 }
 
 function updateProgress(percentage, text) {
     const safePercentage = Math.max(0, Math.min(100, Number(percentage) || 0));
-    elements.progressBar.style.width = `${safePercentage}%`;
-    elements.progressText.textContent = text;
+    if (elements.progressBar) {
+        elements.progressBar.style.width = `${safePercentage}%`;
+    }
+
+    if (elements.progressText) {
+        elements.progressText.textContent = text;
+    }
 }
 
 function resetProgress() {
@@ -804,18 +971,23 @@ function statusLabel(status) {
 }
 
 function getApiConfigFromInputs() {
-    const apiKey = sanitizeApiKey(elements.apiKeyInput.value);
-    let mode = normalizeText(elements.apiKeyModeInput.value, "none");
+    const apiKey = sanitizeApiKey(elements.apiKeyInput?.value ?? API_KEY);
+    let mode = normalizeText(elements.apiKeyModeInput?.value, API_KEY_MODE).toLowerCase();
+
+    if (mode !== "none" && mode !== "header" && mode !== "query") {
+        mode = "none";
+    }
+
     if (!apiKey) {
         mode = "none";
     }
 
     return {
-        apiUrl: normalizeText(elements.apiUrlInput.value, ""),
+        apiUrl: normalizeText(elements.apiUrlInput?.value, API_URL),
         apiKey,
         mode,
-        headerName: normalizeText(elements.apiKeyHeaderInput.value, "x-functions-key"),
-        queryName: normalizeText(elements.apiKeyQueryInput.value, "code")
+        headerName: normalizeText(elements.apiKeyHeaderInput?.value, API_KEY_HEADER_NAME),
+        queryName: normalizeText(elements.apiKeyQueryInput?.value, API_KEY_QUERY_PARAM)
     };
 }
 
@@ -835,6 +1007,11 @@ function sanitizeApiKey(rawValue) {
 
 function showToast(message) {
     if (!message) {
+        return;
+    }
+
+    if (!elements.toast) {
+        console.info(message);
         return;
     }
 

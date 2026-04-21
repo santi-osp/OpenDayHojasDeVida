@@ -524,6 +524,30 @@ h3,
     gap: 0.18rem;
 }
 
+.orthography-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.4rem;
+}
+
+.orthography-item {
+    padding: 0.45rem 0.56rem;
+    border-radius: var(--radius-sm);
+    background: rgba(234, 245, 255, 0.9);
+    border: 1px solid rgba(0, 87, 184, 0.22);
+}
+
+.orthography-line {
+    margin: 0;
+    line-height: 1.35;
+}
+
+.orthography-line+.orthography-line {
+    margin-top: 0.18rem;
+}
+
 .muted-empty {
     color: var(--text-secondary);
     font-style: italic;
