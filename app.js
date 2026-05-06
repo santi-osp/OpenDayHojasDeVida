@@ -1,15 +1,6 @@
 "use strict";
 
-// ===============================
-// Configuración editable
-// ===============================
-const API_URL = "https://sdipfunchuiadllo.azurewebsites.net/api/v1.0.0/cv/analyze";
-const API_KEY = ""; // Pega aquí tu key real si la Function lo requiere
-const API_KEY_MODE = "none"; // none | header | query
-const API_KEY_HEADER_NAME = "x-functions-key";
-const API_KEY_QUERY_PARAM = "code";
-
-const SOURCE_LABEL = "github-pages";
+const RUNTIME_CONFIG = readRuntimeConfig();
 const MAX_FILE_SIZE_MB = 8;
 const SESSION_STORAGE_KEY = "openday_cv_analysis_history_v1";
 
@@ -28,11 +19,6 @@ const state = {
 };
 
 const elements = {
-    apiUrlInput: document.getElementById("apiUrlInput"),
-    apiKeyInput: document.getElementById("apiKeyInput"),
-    apiKeyModeInput: document.getElementById("apiKeyModeInput"),
-    apiKeyHeaderInput: document.getElementById("apiKeyHeaderInput"),
-    apiKeyQueryInput: document.getElementById("apiKeyQueryInput"),
     dropZone: document.getElementById("dropZone"),
     fileInput: document.getElementById("fileInput"),
     analyzeBtn: document.getElementById("analyzeBtn"),
@@ -48,7 +34,6 @@ const elements = {
     metricNoRecomendado: document.getElementById("metricNoRecomendado"),
     frequentObservations: document.getElementById("frequentObservations"),
     executiveSummary: document.getElementById("executiveSummary"),
-    downloadJsonBtn: document.getElementById("downloadJsonBtn"),
     downloadCsvBtn: document.getElementById("downloadCsvBtn"),
     clearHistoryBtn: document.getElementById("clearHistoryBtn"),
     toast: document.getElementById("toast")
@@ -58,7 +43,6 @@ initializeApp();
 
 function initializeApp() {
     configurePdfWorker();
-    loadDefaultConfig();
     restoreSessionHistory();
     bindEvents();
     renderQueue();
@@ -69,28 +53,6 @@ function initializeApp() {
 function configurePdfWorker() {
     if (window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions) {
         window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-    }
-}
-
-function loadDefaultConfig() {
-    if (elements.apiUrlInput) {
-        elements.apiUrlInput.value = API_URL;
-    }
-
-    if (elements.apiKeyInput) {
-        elements.apiKeyInput.value = API_KEY;
-    }
-
-    if (elements.apiKeyModeInput) {
-        elements.apiKeyModeInput.value = API_KEY_MODE;
-    }
-
-    if (elements.apiKeyHeaderInput) {
-        elements.apiKeyHeaderInput.value = API_KEY_HEADER_NAME;
-    }
-
-    if (elements.apiKeyQueryInput) {
-        elements.apiKeyQueryInput.value = API_KEY_QUERY_PARAM;
     }
 }
 
@@ -141,10 +103,6 @@ function bindEvents() {
 
     elements.analyzeBtn.addEventListener("click", analyzeQueue);
     elements.clearQueueBtn.addEventListener("click", clearQueue);
-
-    if (elements.downloadJsonBtn) {
-        elements.downloadJsonBtn.addEventListener("click", downloadJsonReport);
-    }
 
     if (elements.downloadCsvBtn) {
         elements.downloadCsvBtn.addEventListener("click", downloadCsvReport);
@@ -247,12 +205,9 @@ async function analyzeQueue() {
         return;
     }
 
-    const apiConfig = getApiConfigFromInputs();
+    const apiConfig = getApiConfig();
     if (!apiConfig.apiUrl) {
-        showToast("Configura la URL de la Azure Function para continuar.");
-        if (elements.apiUrlInput) {
-            elements.apiUrlInput.focus();
-        }
+        showToast("No hay URL configurada para la Azure Function.");
         return;
     }
 
@@ -386,26 +341,15 @@ async function extractTextFromDocx(file) {
 }
 
 async function callAzureFunction({ apiConfig, fileName, text, pageCount }) {
-    let requestUrl = apiConfig.apiUrl;
+    const requestUrl = apiConfig.apiUrl;
     const headers = {
         "Content-Type": "application/json"
     };
 
-    if (apiConfig.apiKey && apiConfig.mode === "header") {
-        headers[apiConfig.headerName] = apiConfig.apiKey;
-    }
-
-    if (apiConfig.apiKey && apiConfig.mode === "query") {
-        const url = new URL(requestUrl);
-        url.searchParams.set(apiConfig.queryName, apiConfig.apiKey);
-        requestUrl = url.toString();
-    }
-
     const payload = {
         fileName,
         text,
-        pageCount: normalizePageCount(pageCount),
-        source: SOURCE_LABEL
+        pageCount: normalizePageCount(pageCount)
     };
 
     let response;
@@ -415,7 +359,7 @@ async function callAzureFunction({ apiConfig, fileName, text, pageCount }) {
             headers,
             body: JSON.stringify(payload)
         });
-    } catch (error) {
+    } catch {
         throw new Error("No se pudo conectar con Azure Function (revisa CORS, URL o red).");
     }
 
@@ -427,7 +371,7 @@ async function callAzureFunction({ apiConfig, fileName, text, pageCount }) {
     let data;
     try {
         data = await response.json();
-    } catch (error) {
+    } catch {
         throw new Error("La respuesta de Azure Function no es JSON válido.");
     }
 
@@ -832,13 +776,6 @@ function createExecutiveSummary({ total, averageScore, verdictCounts, topObserva
         `La observación más repetida fue: ${mostFrequent}.`;
 }
 
-function downloadJsonReport() {
-    const report = buildConsolidatedReport();
-    const fileName = `reporte-cv-${formatDateForFile(new Date())}.json`;
-    const content = JSON.stringify(report, null, 2);
-    downloadFile(fileName, content, "application/json;charset=utf-8");
-}
-
 function downloadCsvReport() {
     if (!state.analyses.length) {
         showToast("No hay datos para exportar en CSV.");
@@ -970,39 +907,27 @@ function statusLabel(status) {
     return "Pendiente";
 }
 
-function getApiConfigFromInputs() {
-    const apiKey = sanitizeApiKey(elements.apiKeyInput?.value ?? API_KEY);
-    let mode = normalizeText(elements.apiKeyModeInput?.value, API_KEY_MODE).toLowerCase();
-
-    if (mode !== "none" && mode !== "header" && mode !== "query") {
-        mode = "none";
-    }
-
-    if (!apiKey) {
-        mode = "none";
-    }
-
+function getApiConfig() {
     return {
-        apiUrl: normalizeText(elements.apiUrlInput?.value, API_URL),
-        apiKey,
-        mode,
-        headerName: normalizeText(elements.apiKeyHeaderInput?.value, API_KEY_HEADER_NAME),
-        queryName: normalizeText(elements.apiKeyQueryInput?.value, API_KEY_QUERY_PARAM)
+        apiUrl: RUNTIME_CONFIG.apiUrl
     };
 }
 
-function sanitizeApiKey(rawValue) {
-    const value = normalizeText(rawValue, "");
-    if (!value) {
-        return "";
+function readRuntimeConfig() {
+    const config = window.OpenDayCvConfig || {};
+
+    return {
+        apiUrl: normalizeConfigValue(config.apiUrl, "")
+    };
+}
+
+function normalizeConfigValue(value, fallback) {
+    if (typeof value !== "string") {
+        return fallback;
     }
 
-    const upper = value.toUpperCase();
-    if (upper.includes("REEMPLAZAR") || upper.includes("YOUR_KEY") || upper.includes("TU_KEY")) {
-        return "";
-    }
-
-    return value;
+    const trimmed = value.trim();
+    return trimmed || fallback;
 }
 
 function showToast(message) {

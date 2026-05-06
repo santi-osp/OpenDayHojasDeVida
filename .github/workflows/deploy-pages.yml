@@ -1,0 +1,73 @@
+name: Deploy OpenDayHojasDeVida
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      CV_ANALYZE_API_URL: ${{ secrets.CV_ANALYZE_API_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Build static site
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          api_url="${CV_ANALYZE_API_URL:-}"
+
+          if [ -z "${api_url}" ]; then
+            echo "::error::CV_ANALYZE_API_URL is required."
+            exit 1
+          fi
+
+          rm -rf _site
+          mkdir _site
+          cp index.html styles.css app.js logo-postobon-azul.png _site/
+
+          node <<'NODE'
+          const fs = require("fs");
+          const path = require("path");
+
+          const apiUrl = (process.env.CV_ANALYZE_API_URL || "").trim();
+
+          const config = {
+              apiUrl
+          };
+
+          fs.writeFileSync(
+              path.join("_site", "config.js"),
+              `window.OpenDayCvConfig = ${JSON.stringify(config, null, 4)};\n`,
+              "utf8"
+          );
+          NODE
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
