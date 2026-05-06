@@ -206,8 +206,18 @@ async function analyzeQueue() {
     }
 
     const apiConfig = getApiConfig();
+    if (!apiConfig.configLoaded) {
+        showToast("No se cargó config.js. Revisa que GitHub Pages despliegue desde GitHub Actions.");
+        return;
+    }
+
     if (!apiConfig.apiUrl) {
         showToast("No hay URL configurada para la Azure Function.");
+        return;
+    }
+
+    if (!isValidUrl(apiConfig.apiUrl)) {
+        showToast("La URL configurada para Azure Function no es válida.");
         return;
     }
 
@@ -909,6 +919,7 @@ function statusLabel(status) {
 
 function getApiConfig() {
     return {
+        configLoaded: RUNTIME_CONFIG.configLoaded,
         apiUrl: RUNTIME_CONFIG.apiUrl
     };
 }
@@ -917,6 +928,7 @@ function readRuntimeConfig() {
     const config = window.OpenDayCvConfig || {};
 
     return {
+        configLoaded: Boolean(window.OpenDayCvConfig),
         apiUrl: normalizeConfigValue(config.apiUrl, "")
     };
 }
@@ -928,6 +940,15 @@ function normalizeConfigValue(value, fallback) {
 
     const trimmed = value.trim();
     return trimmed || fallback;
+}
+
+function isValidUrl(value) {
+    try {
+        new URL(value);
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 function showToast(message) {

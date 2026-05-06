@@ -51,6 +51,12 @@ jobs:
           const path = require("path");
 
           const apiUrl = (process.env.CV_ANALYZE_API_URL || "").trim();
+          try {
+              new URL(apiUrl);
+          } catch {
+              console.error("::error::CV_ANALYZE_API_URL must be a valid absolute URL.");
+              process.exit(1);
+          }
 
           const config = {
               apiUrl
